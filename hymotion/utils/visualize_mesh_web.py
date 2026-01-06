@@ -353,6 +353,7 @@ def generate_static_html_content(
     folder_name: str,
     file_name: str,
     hide_captions: bool = False,
+    expression_data: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Generate static HTML content with embedded SMPL data and captions.
@@ -363,6 +364,7 @@ def generate_static_html_content(
         folder_name: The folder name containing the NPZ/meta files
         file_name: The base file name (without extension)
         hide_captions: Whether to hide captions in the visualization
+        expression_data: Optional expression data for VRM ({"expression": str, "intensity": float})
 
     Returns:
         The HTML content as a string
@@ -397,10 +399,16 @@ def generate_static_html_content(
         except Exception as exc:
             print(f">>> Warning: Failed to load VRM preview file '{vrm_path}': {exc}")
 
+    # Prepare expression data JSON
+    if expression_data is None:
+        expression_data = {"expression": "neutral", "intensity": 0.0}
+    expression_data_json = json.dumps(expression_data, ensure_ascii=False)
+
     # Replace placeholders with actual data
     html_content = template_content.replace("{{ smpl_data_json }}", smpl_data_json)
     html_content = html_content.replace("{{ caption_html }}", caption_html)
     html_content = html_content.replace("{{ vrm_data_base64 }}", vrm_data_base64)
+    html_content = html_content.replace("{{ expression_data_json }}", expression_data_json)
 
     print(f">>> Generated static HTML content for {folder_name}/{file_name}")
     return html_content

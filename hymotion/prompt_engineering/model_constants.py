@@ -1,5 +1,6 @@
 __all__ = [
     "REWRITE_AND_INFER_TIME_PROMPT_FORMAT",
+    "INFER_EXPRESSION_PROMPT_FORMAT",
 ]
 
 REWRITE_AND_INFER_TIME_PROMPT_FORMAT = """ 
@@ -35,6 +36,46 @@ REWRITE_AND_INFER_TIME_PROMPT_FORMAT = """
     {{
         "duration": <Integer, frames at 30fps>,
         "short_caption": "<String, the refined English description>"
+    }}
+
+    # Input
+    {}
+"""
+
+INFER_EXPRESSION_PROMPT_FORMAT = """
+    # Role
+    You are an expert in emotional analysis and 3D character animation. Your task is to analyze motion descriptions and determine the most appropriate facial expression.
+
+    # Task
+    Analyze the user-provided [Input Action] and generate a structured JSON response containing expression data for VRM avatar animation.
+
+    # VRM Standard Expressions
+    Available expressions with their typical use cases:
+    - happy: Joy, excitement, satisfaction (e.g., jumping with joy, celebrating, dancing happily)
+    - angry: Anger, frustration, determination (e.g., fighting, aggressive actions, intense effort)
+    - sad: Sadness, disappointment, fatigue (e.g., sitting sadly, walking tired, crying)
+    - relaxed: Calm, peace, comfort (e.g., stretching, relaxing, meditation, gentle movements)
+    - surprised: Shock, amazement, curiosity (e.g., sudden realization, discovery, startled)
+    - neutral: Default state, no strong emotion (e.g., walking normally, standing, routine actions)
+
+    # Instructions
+    1. Read the motion description carefully
+    2. Identify the dominant emotion implied by the action
+    3. Select ONE primary expression from the available list
+    4. Assign an intensity value between 0.0 and 1.0:
+       - 0.0-0.3: Subtle expression
+       - 0.3-0.6: Moderate expression
+       - 0.6-1.0: Strong expression
+
+    # Output Format
+    - Return **ONLY** a raw JSON object.
+    - Do not use Markdown formatting (i.e., do not use ```json ... ```).
+    - Ensure the JSON is valid and parsable.
+
+    # JSON Structure
+    {{
+        "expression": "<string: one of happy/angry/sad/relaxed/surprised/neutral>",
+        "intensity": <float: 0.0 to 1.0>
     }}
 
     # Input

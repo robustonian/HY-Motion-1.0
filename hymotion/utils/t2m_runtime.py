@@ -265,6 +265,33 @@ class T2MRuntime:
         print(f"\t>>> Rewritten text: {rewritten_text}, duration: {duration:.2f} seconds")
         return duration, rewritten_text
 
+    def infer_expression(self, text: str) -> dict:
+        """
+        Infer facial expression from text prompt.
+
+        Args:
+            text: Motion description text
+
+        Returns:
+            Dict with 'expression' (str) and 'intensity' (float)
+        """
+        # Check if expression inference is enabled
+        if not os.environ.get("HYMOTION_INFER_EXPRESSION"):
+            return {"expression": "neutral", "intensity": 0.0}
+
+        if self.prompt_rewriter is None:
+            print(">>> Expression inference skipped: prompt_rewriter not available")
+            return {"expression": "neutral", "intensity": 0.0}
+
+        try:
+            print(">>> Inferring expression from text...")
+            expression_data = self.prompt_rewriter.infer_expression(text)
+            print(f"\t>>> Expression: {expression_data['expression']}, intensity: {expression_data['intensity']}")
+            return expression_data
+        except Exception as e:
+            print(f">>> Expression inference failed: {e}")
+            return {"expression": "neutral", "intensity": 0.0}
+
     def generate_motion(
         self,
         text: str,
@@ -321,10 +348,14 @@ class T2MRuntime:
             output_filename=output_filename,
         )
 
+        # Infer expression from text (if enabled)
+        expression_data = self.infer_expression(text)
+
         html_content = self._generate_html_content(
             timestamp=ts,
             file_path=base_filename,
             output_dir=output_dir,
+            expression_data=expression_data,
         )
 
         if output_format == "fbx" and not self.fbx_available:
@@ -349,6 +380,7 @@ class T2MRuntime:
         timestamp: str,
         file_path: str,
         output_dir: Optional[str] = None,
+        expression_data: Optional[dict] = None,
     ) -> str:
         """
         Generate static HTML content with embedded data for iframe srcdoc.
@@ -358,6 +390,7 @@ class T2MRuntime:
             timestamp: Timestamp string for logging
             file_path: Base filename (without extension)
             output_dir: Directory where NPZ/meta files are stored
+            expression_data: Optional expression data for VRM ({"expression": str, "intensity": float})
 
         Returns:
             HTML content string (to be used in iframe srcdoc)
@@ -371,6 +404,7 @@ class T2MRuntime:
                 folder_name=gradio_dir,
                 file_name=file_path,
                 hide_captions=False,
+                expression_data=expression_data,
             )
 
             print(f">>> Static HTML content generated for: {file_path}")

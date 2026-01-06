@@ -149,6 +149,23 @@ python3 gradio_app.py
 - VRM's MToon shaders are automatically converted to standard materials for web compatibility.
 - Coordinate system differences between SMPL and VRM are automatically handled.
 
+#### Expression Inference (Experimental)
+
+You can enable automatic facial expression inference from text prompts for VRM previews:
+
+```bash
+export HYMOTION_INFER_EXPRESSION=1
+export HYMOTION_PREVIEW_VRM="path/to/your/model.vrm"
+python3 gradio_app.py
+```
+
+When enabled, the system uses LLM to analyze the motion description and applies appropriate facial expressions (happy, sad, angry, surprised, relaxed) to the VRM character.
+
+**Notes**:
+- Requires LLM prompt engineering to be available (either via host or local model)
+- Works independently of `DISABLE_PROMPT_ENGINEERING` setting
+- Expression intensity is automatically determined based on the action context
+
 #### Custom FBX Template
 
 You can override the default FBX template for motion retargeting by setting the `HYMOTION_TEMPLATE_FBX` environment variable:

@@ -18,7 +18,7 @@ from openai import OpenAI
 from requests import exceptions as req_exc
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from .model_constants import REWRITE_AND_INFER_TIME_PROMPT_FORMAT
+from .model_constants import INFER_EXPRESSION_PROMPT_FORMAT, REWRITE_AND_INFER_TIME_PROMPT_FORMAT
 
 # logging.basicConfig(level=logging.INFO)
 
@@ -314,6 +314,106 @@ class PromptRewriter:
                 return round(float(result["duration"]) / 30.0, 2), result["short_caption"]
             except:
                 return 5.0, text
+
+    def infer_expression(
+        self,
+        text: str,
+        prompt_format: str = INFER_EXPRESSION_PROMPT_FORMAT,
+    ) -> Dict[str, Any]:
+        """
+        Infer facial expression from text prompt.
+
+        Args:
+            text: Motion description text
+            prompt_format: Prompt template for expression inference
+
+        Returns:
+            Dict with 'expression' (str) and 'intensity' (float)
+        """
+        default_result = {"expression": "neutral", "intensity": 0.0}
+
+        if self.host:
+            self.logger.info("Start inferring expression...")
+            try:
+                response = self.api.call_data_eval(prompt_format.format(text))
+                if hasattr(response, "model_dump"):
+                    payload = response.model_dump()
+                else:
+                    payload = response
+
+                choices = payload.get("choices", [])
+                if not choices:
+                    return default_result
+
+                choice = choices[0]
+                if isinstance(choice, dict):
+                    msg = choice.get("message", {})
+                    content = msg.get("content", "")
+                else:
+                    msg = getattr(choice, "message", None)
+                    content = getattr(msg, "content", "") if msg else ""
+
+                if not content:
+                    return default_result
+
+                # Parse JSON from content
+                content = content.strip()
+                if content.startswith("```"):
+                    content = re.sub(r"^```(?:json)?\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content)
+                if "{" in content:
+                    start = content.find("{")
+                    end = content.rfind("}")
+                    if 0 <= start < end:
+                        content = content[start : end + 1]
+
+                result = json.loads(content)
+                expression = result.get("expression", "neutral")
+                intensity = float(result.get("intensity", 0.5))
+
+                # Validate expression
+                valid_expressions = {"happy", "angry", "sad", "relaxed", "surprised", "neutral"}
+                if expression not in valid_expressions:
+                    expression = "neutral"
+
+                # Clamp intensity
+                intensity = max(0.0, min(1.0, intensity))
+
+                self.logger.info(f"Expression inference completed: {expression} ({intensity})")
+                return {"expression": expression, "intensity": intensity}
+
+            except Exception as e:
+                self.logger.warning(f"Expression inference failed: {e}")
+                return default_result
+        else:
+            # Local model inference
+            messages = [{"role": "user", "content": prompt_format.format(text)}]
+            full_prompt = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            inputs = self.tokenizer([full_prompt], return_tensors="pt").to(self.model.device)
+            with torch.no_grad():
+                outputs = self.model.generate(**inputs, max_new_tokens=256)
+            response = self.tokenizer.decode(
+                outputs[0][inputs.input_ids.shape[1] :].tolist(), skip_special_tokens=True
+            )
+
+            try:
+                json_str = re.search(r"\{.*\}", response, re.DOTALL).group()
+                result = json.loads(json_str)
+                expression = result.get("expression", "neutral")
+                intensity = float(result.get("intensity", 0.5))
+
+                valid_expressions = {"happy", "angry", "sad", "relaxed", "surprised", "neutral"}
+                if expression not in valid_expressions:
+                    expression = "neutral"
+                intensity = max(0.0, min(1.0, intensity))
+
+                return {"expression": expression, "intensity": intensity}
+            except Exception:
+                return default_result
 
 
 if __name__ == "__main__":

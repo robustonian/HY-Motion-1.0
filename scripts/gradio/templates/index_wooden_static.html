@@ -82,6 +82,9 @@
 <script type="text/plain" id="vrm-data-base64">
 {{ vrm_data_base64 }}
 </script>
+<script type="application/json" id="expression-data-json">
+{{ expression_data_json }}
+</script>
 
 <script type="module">
     import * as THREE from 'three';
@@ -937,6 +940,77 @@
         return bones;
     }
 
+    // ============================================================
+    // Expression Management
+    // ============================================================
+
+    const VRM_EXPRESSION_MAP = {
+        'happy': 'happy',
+        'angry': 'angry',
+        'sad': 'sad',
+        'relaxed': 'relaxed',
+        'surprised': 'surprised',
+        'neutral': null  // No expression change for neutral
+    };
+
+    function loadExpressionData() {
+        const element = document.getElementById('expression-data-json');
+        if (!element) return { expression: 'neutral', intensity: 0 };
+
+        try {
+            return JSON.parse(element.textContent);
+        } catch (e) {
+            console.warn('Failed to parse expression data:', e);
+            return { expression: 'neutral', intensity: 0 };
+        }
+    }
+
+    function applyExpressionToVrm(vrm, expressionData) {
+        if (!vrm) {
+            console.warn('VRM not available for expression');
+            return;
+        }
+
+        // Check for expressionManager (VRM 1.0) or blendShapeProxy (VRM 0.x)
+        const expressionManager = vrm.expressionManager || vrm.blendShapeProxy;
+        if (!expressionManager) {
+            console.warn('VRM expressionManager/blendShapeProxy not available');
+            return;
+        }
+
+        const { expression, intensity } = expressionData;
+        const vrmExpressionName = VRM_EXPRESSION_MAP[expression];
+
+        // Reset all expressions first
+        Object.values(VRM_EXPRESSION_MAP).forEach(expr => {
+            if (expr) {
+                try {
+                    if (typeof expressionManager.setValue === 'function') {
+                        expressionManager.setValue(expr, 0);
+                    } else if (typeof expressionManager.setBlendShapeGroupValue === 'function') {
+                        expressionManager.setBlendShapeGroupValue(expr, 0);
+                    }
+                } catch (e) {
+                    // Expression may not exist in this VRM
+                }
+            }
+        });
+
+        // Apply the specified expression
+        if (vrmExpressionName) {
+            try {
+                if (typeof expressionManager.setValue === 'function') {
+                    expressionManager.setValue(vrmExpressionName, intensity);
+                } else if (typeof expressionManager.setBlendShapeGroupValue === 'function') {
+                    expressionManager.setBlendShapeGroupValue(vrmExpressionName, intensity);
+                }
+                console.log(`Applied expression: ${vrmExpressionName} with intensity ${intensity}`);
+            } catch (e) {
+                console.warn(`Failed to apply expression ${vrmExpressionName}:`, e);
+            }
+        }
+    }
+
     // Load embedded SMPL data directly (no fetch needed)
     function loadEmbeddedData() {
         try {
@@ -1036,6 +1110,10 @@
                         const bones = buildVrmBoneMap(vrm);
                         model_mesh[data.id] = { bones, sceneRoot: vrmScene, type: 'vrm', vrm };
                         vrmInstances.push(vrm);
+
+                        // Apply expression from embedded data
+                        const expressionData = loadExpressionData();
+                        applyExpressionToVrm(vrm, expressionData);
 
                         loadedModelCount++;
 
