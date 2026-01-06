@@ -85,6 +85,9 @@
 <script type="application/json" id="expression-data-json">
 {{ expression_data_json }}
 </script>
+<script type="text/plain" id="vrm-y-offset">
+{{ vrm_y_offset }}
+</script>
 
 <script type="module">
     import * as THREE from 'three';
@@ -568,6 +571,9 @@
     let loadedModelCount = 0;
     let vrmInstances = [];
 
+    // VRM Y offset from environment variable
+    const VRM_Y_OFFSET = parseFloat((document.getElementById('vrm-y-offset')?.textContent || '0').trim()) || 0;
+
     let ignoreGlobalTrans = false;
     let currentOffsets = [];
 
@@ -601,12 +607,15 @@
             // For VRM, we need to flip X and Z axes due to different coordinate systems
             const flipSign = isVrm ? -1 : 1;
 
+            // Apply Y offset for VRM models
+            const yOffset = isVrm ? VRM_Y_OFFSET : 0;
+
             if (ignoreGlobalTrans) {
-                meshContainer.position.set(-offsets[b], 0, 0);
+                meshContainer.position.set(-offsets[b], yOffset, 0);
             } else {
                 meshContainer.position.set(
                     flipSign * smpl_params.Th[0][0] - offsets[b],
-                    smpl_params.Th[0][1],
+                    smpl_params.Th[0][1] + yOffset,
                     flipSign * smpl_params.Th[0][2]
                 );
             }
@@ -1108,6 +1117,21 @@
                         });
                         scene.add(vrmScene);
                         const bones = buildVrmBoneMap(vrm);
+
+                        // Reset Hips bone and its parents' initial position to avoid floating
+                        if (bones[0]) {
+                            // Reset Hips position
+                            bones[0].position.set(0, 0, 0);
+                            // Also reset parent nodes (e.g., Armature/Root)
+                            let parent = bones[0].parent;
+                            while (parent && parent !== vrmScene) {
+                                parent.position.set(0, 0, 0);
+                                parent = parent.parent;
+                            }
+                        }
+                        // Y-axis offset is now applied in updateFrame() for consistency
+                        // The VRM_Y_OFFSET is read from the vrm-y-offset element at module scope
+
                         model_mesh[data.id] = { bones, sceneRoot: vrmScene, type: 'vrm', vrm };
                         vrmInstances.push(vrm);
 

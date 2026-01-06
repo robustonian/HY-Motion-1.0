@@ -404,11 +404,15 @@ def generate_static_html_content(
         expression_data = {"expression": "neutral", "intensity": 0.0}
     expression_data_json = json.dumps(expression_data, ensure_ascii=False)
 
+    # Get VRM Y offset from environment variable
+    vrm_y_offset = os.environ.get("HYMOTION_VRM_Y_OFFSET", "0")
+
     # Replace placeholders with actual data
     html_content = template_content.replace("{{ smpl_data_json }}", smpl_data_json)
     html_content = html_content.replace("{{ caption_html }}", caption_html)
     html_content = html_content.replace("{{ vrm_data_base64 }}", vrm_data_base64)
     html_content = html_content.replace("{{ expression_data_json }}", expression_data_json)
+    html_content = html_content.replace("{{ vrm_y_offset }}", vrm_y_offset)
 
     print(f">>> Generated static HTML content for {folder_name}/{file_name}")
     return html_content
