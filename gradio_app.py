@@ -123,14 +123,17 @@ def generate_motion_on_gpu(
     output_format: str,
     original_text: str,
     output_dir: str,
-) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str], dict, dict]:
     """
     GPU-decorated function for motion generation.
     This function will request GPU allocation on Hugging Face Zero GPU.
+
+    Returns:
+        Tuple of (html_content, fbx_files, expression_data, motion_state)
     """
     runtime = _init_runtime_if_needed()
 
-    html_content, fbx_files, _ = runtime.generate_motion(
+    html_content, fbx_files, _, expression_data, motion_state = runtime.generate_motion(
         text=text,
         seeds_csv=seeds_csv,
         duration=motion_duration,
@@ -139,7 +142,7 @@ def generate_motion_on_gpu(
         original_text=original_text,
         output_dir=output_dir,
     )
-    return html_content, fbx_files
+    return html_content, fbx_files, expression_data, motion_state
 
 
 # define data sources
@@ -510,16 +513,22 @@ class T2MGradioUI:
         seed_input: str,
         duration: float,
         cfg_scale: float,
-    ) -> Tuple[str, List[str]]:
+    ) -> Tuple[str, List[str], str, dict]:
+        """
+        Generate motion and return HTML, FBX files, expression info, and motion state.
+
+        Returns:
+            Tuple of (iframe_html, fbx_files, expression_text, motion_state)
+        """
         # When rewrite is not available, use original_text directly
         if not self.prompt_engineering_available:
             text_to_use = original_text.strip()
             if not text_to_use:
-                return "Error: Input text is empty, please enter text first", []
+                return "Error: Input text is empty, please enter text first", [], "", None
         else:
             text_to_use = rewritten_text.strip()
             if not text_to_use:
-                return "Error: Rewritten text is empty, please rewrite the text first", []
+                return "Error: Rewritten text is empty, please rewrite the text first", [], "", None
 
         try:
             # Use runtime from global if available (for Zero GPU), otherwise use self.runtime
@@ -528,7 +537,7 @@ class T2MGradioUI:
             req_format = "fbx" if fbx_ok else "dict"
 
             # Use GPU-decorated function for Zero GPU support
-            html_content, fbx_files = generate_motion_on_gpu(
+            html_content, fbx_files, expression_data, motion_state = generate_motion_on_gpu(
                 text=text_to_use,
                 seeds_csv=seed_input,
                 motion_duration=duration,
@@ -548,13 +557,63 @@ class T2MGradioUI:
                     style="border: none; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);"
                 ></iframe>
             """
-            return iframe_html, fbx_files
+            # Format expression info for display
+            expr = expression_data.get("expression", "neutral")
+            intensity = expression_data.get("intensity", 0.0)
+            expression_text = f"{expr} (intensity: {intensity:.1f})"
+
+            return iframe_html, fbx_files, expression_text, motion_state
         except Exception as e:
             print(f"\t>>> Motion generation failed: {e}")
             return (
                 f"❌ Motion generation failed: {str(e)}\n\nPlease check the input parameters or try again later",
                 [],
+                "",
+                None,
             )
+
+    def _regenerate_with_expression(
+        self,
+        expression_override: str,
+        motion_state: dict,
+    ) -> str:
+        """
+        Regenerate HTML preview with a different expression.
+
+        Args:
+            expression_override: Expression to use (or "自動 (Auto)" to keep current)
+            motion_state: Motion state dict from previous generation
+
+        Returns:
+            iframe_html: Updated HTML content
+        """
+        if motion_state is None:
+            return "<p>モーションを先に生成してください / Please generate a motion first</p>"
+
+        # If "自動 (Auto)" is selected, don't regenerate
+        if expression_override == "自動 (Auto)":
+            return gr.update()
+
+        try:
+            runtime = _global_runtime if _global_runtime is not None else self.runtime
+            html_content = runtime.regenerate_html_with_expression(
+                motion_state=motion_state,
+                expression=expression_override,
+                intensity=0.8,  # Default intensity for manual override
+            )
+            escaped_html = html_content.replace('"', "&quot;")
+            iframe_html = f"""
+                <iframe
+                    srcdoc="{escaped_html}"
+                    width="100%"
+                    height="750px"
+                    style="border: none; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);"
+                ></iframe>
+            """
+            return iframe_html
+        except Exception as e:
+            print(f"\t>>> Expression regeneration failed: {e}")
+            return f"<p>❌ Expression change failed: {str(e)}</p>"
 
     def _get_example_choices(self):
         """Get all example choices from all data sources"""
@@ -665,6 +724,22 @@ class T2MGradioUI:
                         label="📊 Status Information",
                         value=status_msg,
                     )
+
+                    # Expression controls (for VRM preview)
+                    with gr.Row():
+                        self.expression_display = gr.Textbox(
+                            label="🎭 推論された表情 / Inferred Expression",
+                            value="",
+                            interactive=False,
+                        )
+                        self.expression_override = gr.Dropdown(
+                            label="✨ 表情の手動変更 / Manual Override",
+                            choices=["自動 (Auto)", "happy", "angry", "sad", "relaxed", "surprised", "neutral"],
+                            value="自動 (Auto)",
+                        )
+
+                    # State to hold current motion data for expression regeneration
+                    self.motion_state = gr.State(value=None)
 
                     # FBX Download section
                     with gr.Row(visible=False) as self.fbx_download_row:
@@ -787,8 +862,8 @@ class T2MGradioUI:
 
         # Generate motion logic
         self.generate_btn.click(
-            fn=lambda: "Generating motion, please wait... (It takes some extra time to start the renderer for the first generation)",
-            outputs=[self.status_output],
+            fn=lambda: ("Generating motion, please wait... (It takes some extra time to start the renderer for the first generation)", "自動 (Auto)"),
+            outputs=[self.status_output, self.expression_override],
         ).then(
             self._generate_motion,
             inputs=[
@@ -798,7 +873,7 @@ class T2MGradioUI:
                 self.duration_slider,
                 self.cfg_slider,
             ],
-            outputs=[self.output_display, self.fbx_files],
+            outputs=[self.output_display, self.fbx_files, self.expression_display, self.motion_state],
             concurrency_limit=NUM_WORKERS,
         ).then(
             fn=lambda fbx_list: (
@@ -811,6 +886,13 @@ class T2MGradioUI:
             ),
             inputs=[self.fbx_files],
             outputs=[self.status_output, self.fbx_download_row],
+        )
+
+        # Expression override logic - regenerate HTML with new expression
+        self.expression_override.change(
+            fn=self._regenerate_with_expression,
+            inputs=[self.expression_override, self.motion_state],
+            outputs=[self.output_display],
         )
 
         # Reset logic - different behavior based on rewrite availability

@@ -375,16 +375,23 @@ class T2MRuntime:
             print(">>> Warning: FBX export requested but FBX SDK is not available. Falling back to dict format.")
             output_format = "dict"
 
+        # Store motion state for expression regeneration
+        motion_state = {
+            "folder": output_dir if output_dir is not None else "output/gradio",
+            "file": base_filename,
+            "text": text,
+        }
+
         if output_format == "fbx" and self.fbx_available:
             fbx_files = self._generate_fbx_files(
                 visualization_data=save_data,
                 output_dir=output_dir,
                 fbx_filename=output_filename,
             )
-            return html_content, fbx_files, model_output
+            return html_content, fbx_files, model_output, expression_data, motion_state
         elif output_format == "dict":
             # Return HTML content and empty list for fbx_files when using dict format
-            return html_content, [], model_output
+            return html_content, [], model_output, expression_data, motion_state
         else:
             raise ValueError(f">>> Invalid output format: {output_format}")
 
@@ -430,6 +437,43 @@ class T2MRuntime:
             traceback.print_exc()
             # Return error HTML
             return f"<html><body><h1>Error generating visualization</h1><p>{str(e)}</p></body></html>"
+
+    def regenerate_html_with_expression(
+        self,
+        motion_state: dict,
+        expression: str,
+        intensity: float = 0.8,
+    ) -> str:
+        """
+        Regenerate HTML content with a different expression.
+        This method does not re-run the motion generation pipeline.
+
+        Args:
+            motion_state: Dict with 'folder' and 'file' keys from previous generation
+            expression: Expression name (happy, angry, sad, relaxed, surprised, neutral)
+            intensity: Expression intensity (0.0 to 1.0)
+
+        Returns:
+            HTML content string
+        """
+        if motion_state is None:
+            return "<html><body><h1>No motion data available</h1><p>Please generate a motion first.</p></body></html>"
+
+        folder = motion_state.get("folder", "output/gradio")
+        file_path = motion_state.get("file", "")
+
+        if not file_path:
+            return "<html><body><h1>Invalid motion state</h1><p>File path is empty.</p></body></html>"
+
+        expression_data = {"expression": expression, "intensity": intensity}
+        print(f">>> Regenerating HTML with expression: {expression}, intensity: {intensity}")
+
+        return self._generate_html_content(
+            timestamp="regenerate",
+            file_path=file_path,
+            output_dir=folder,
+            expression_data=expression_data,
+        )
 
     def _generate_fbx_files(
         self,
