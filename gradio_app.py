@@ -18,19 +18,32 @@ def try_to_download_model():
     repo_id = "tencent/HY-Motion-1.0"
     target_folder = "HY-Motion-1.0"
     local_dir = "../models/tencent"
-    # Model files are in nested folder: HY-Motion-1.0/HY-Motion-1.0/
-    final_model_path = os.path.join(local_dir, target_folder, target_folder)
+
+    # Try both possible paths (nested and non-nested)
+    # Some versions of the model use HY-Motion-1.0/HY-Motion-1.0/, others use HY-Motion-1.0/
+    nested_path = os.path.join(local_dir, target_folder, target_folder)
+    flat_path = os.path.join(local_dir, target_folder)
 
     # Check if model already exists locally (check for latest.ckpt)
-    ckpt_path = os.path.join(final_model_path, "latest.ckpt")
-    if os.path.exists(ckpt_path):
-        print(f">>> Model already exists at: {final_model_path}")
-        return final_model_path
+    for candidate_path in [nested_path, flat_path]:
+        ckpt_path = os.path.join(candidate_path, "latest.ckpt")
+        if os.path.exists(ckpt_path):
+            print(f">>> Model already exists at: {candidate_path}")
+            return candidate_path
 
     # Download if not exists
     print(f">>> start download ", repo_id, target_folder)
     local_dir = snapshot_download(repo_id=repo_id, allow_patterns=f"{target_folder}/*", local_dir=local_dir)
-    final_model_path = os.path.join(local_dir, target_folder, target_folder)
+
+    # Check which path structure was downloaded
+    for candidate_path in [os.path.join(local_dir, target_folder, target_folder),
+                           os.path.join(local_dir, target_folder)]:
+        if os.path.exists(os.path.join(candidate_path, "config.yml")):
+            print(f">>> Final model path: {candidate_path}")
+            return candidate_path
+
+    # Fallback to flat path
+    final_model_path = os.path.join(local_dir, target_folder)
     print(f">>> Final model path: {final_model_path}")
     return final_model_path
 
@@ -848,9 +861,10 @@ def create_demo(final_model_path):
     class Args:
         model_path = final_model_path
         output_dir = "output/gradio"
-        prompt_engineering_host = os.environ.get("PROMPT_HOST", None)
+        prompt_engineering_host = os.environ.get("HYMOTION_PROMPTER_API_HOST") or os.environ.get("PROMPT_HOST")
         prompt_engineering_model_path = os.environ.get("PROMPT_MODEL_PATH", None)
-        disable_prompt_engineering = os.environ.get("DISABLE_PROMPT_ENGINEERING", False)
+        _disable_pe_env = os.environ.get("DISABLE_PROMPT_ENGINEERING", "")
+        disable_prompt_engineering = _disable_pe_env.lower() not in ("", "0", "false", "no")
 
     args = Args()
     _global_args = args  # Set global args for lazy loading

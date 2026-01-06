@@ -149,11 +149,26 @@ python3 gradio_app.py
 - VRM's MToon shaders are automatically converted to standard materials for web compatibility.
 - Coordinate system differences between SMPL and VRM are automatically handled.
 
+#### Prompter API Configuration
+
+You can use an external OpenAI-compatible API for prompt engineering and expression inference:
+
+```bash
+export HYMOTION_PROMPTER_API_HOST="http://localhost:8080/v1"
+export HYMOTION_PROMPTER_MODEL="Text2MotionPrompter-Q4_K_M"
+export HYMOTION_PROMPTER_API_KEY="your-api-key"  # Optional, defaults to "EMPTY"
+python3 gradio_app.py
+```
+
+This allows you to use local LLM servers (like llama.cpp, vLLM, or Ollama with OpenAI compatibility) instead of loading the model directly.
+
 #### Expression Inference (Experimental)
 
 You can enable automatic facial expression inference from text prompts for VRM previews:
 
 ```bash
+export HYMOTION_PROMPTER_API_HOST="http://localhost:8080/v1"
+export HYMOTION_PROMPTER_MODEL="Text2MotionPrompter-Q4_K_M"
 export HYMOTION_INFER_EXPRESSION=1
 export HYMOTION_PREVIEW_VRM="path/to/your/model.vrm"
 python3 gradio_app.py
@@ -162,7 +177,7 @@ python3 gradio_app.py
 When enabled, the system uses LLM to analyze the motion description and applies appropriate facial expressions (happy, sad, angry, surprised, relaxed) to the VRM character.
 
 **Notes**:
-- Requires LLM prompt engineering to be available (either via host or local model)
+- Requires LLM prompt engineering to be available (either via API host or local model)
 - Works independently of `DISABLE_PROMPT_ENGINEERING` setting
 - Expression intensity is automatically determined based on the action context
 

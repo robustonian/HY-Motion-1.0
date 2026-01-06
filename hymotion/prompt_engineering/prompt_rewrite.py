@@ -245,7 +245,12 @@ class ResponseParser:
 
 class PromptRewriter:
     def __init__(
-        self, host: Optional[str] = None, model_path: Optional[str] = None, parser: Optional[ResponseParser] = None
+        self,
+        host: Optional[str] = None,
+        model_path: Optional[str] = None,
+        model_name: Optional[str] = None,
+        api_key: Optional[str] = None,
+        parser: Optional[ResponseParser] = None,
     ):
         self.parser = parser or ResponseParser()
         self.logger = logging.getLogger(__name__)
@@ -255,11 +260,12 @@ class PromptRewriter:
                 ApiConfig(
                     host=host,
                     user="",
-                    apikey="EMPTY",
-                    model="Qwen3-30B-A3B-SFT",
+                    apikey=api_key or "EMPTY",
+                    model=model_name or "Qwen3-30B-A3B-SFT",
                     api_version="",
                 )
             )
+            self.logger.info(f"Using API host: {host}, model: {model_name or 'Qwen3-30B-A3B-SFT'}")
         else:
             self.model_path = model_path or "Text2MotionPrompter/Text2MotionPrompter"
             self.tokenizer = None

@@ -75,11 +75,24 @@ class T2MRuntime:
         self._lock = threading.Lock()
         self._loaded = False
 
-        if self.disable_prompt_engineering:
+        # Initialize prompt_rewriter if prompt engineering is enabled OR expression inference is enabled
+        infer_expression_enabled = os.environ.get("HYMOTION_INFER_EXPRESSION")
+        if self.disable_prompt_engineering and not infer_expression_enabled:
             self.prompt_rewriter = None
         else:
+            # Check for environment variable overrides for API settings
+            api_host = os.environ.get("HYMOTION_PROMPTER_API_HOST") or self.prompt_engineering_host
+            api_model = os.environ.get("HYMOTION_PROMPTER_MODEL")
+            api_key = os.environ.get("HYMOTION_PROMPTER_API_KEY")
+
+            if api_host:
+                print(f">>> Using prompter API: {api_host}, model: {api_model or 'default'}")
+
             self.prompt_rewriter = PromptRewriter(
-                host=self.prompt_engineering_host, model_path=self.prompt_engineering_model_path
+                host=api_host,
+                model_path=self.prompt_engineering_model_path,
+                model_name=api_model,
+                api_key=api_key,
             )
         # Skip model loading if checkpoint not found
         if self.skip_model_loading:
