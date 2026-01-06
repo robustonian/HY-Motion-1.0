@@ -3,7 +3,7 @@ import os
 import threading
 import time
 import uuid
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import yaml
@@ -316,6 +316,7 @@ class T2MRuntime:
         output_filename: Optional[str] = None,
         original_text: Optional[str] = None,
         use_special_game_feat: bool = False,
+        expression_override: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Union[str, list[str]], dict]:
         self.load()
         seeds = [int(s.strip()) for s in seeds_csv.split(",") if s.strip() != ""]
@@ -361,8 +362,12 @@ class T2MRuntime:
             output_filename=output_filename,
         )
 
-        # Infer expression from text (if enabled)
-        expression_data = self.infer_expression(text)
+        # Use expression override if provided, otherwise infer from text
+        if expression_override is not None:
+            expression_data = expression_override
+            print(f">>> Using provided expression: {expression_data['expression']} (intensity: {expression_data['intensity']})")
+        else:
+            expression_data = self.infer_expression(text)
 
         html_content = self._generate_html_content(
             timestamp=ts,

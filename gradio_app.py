@@ -123,10 +123,14 @@ def generate_motion_on_gpu(
     output_format: str,
     original_text: str,
     output_dir: str,
+    expression_override: dict = None,
 ) -> Tuple[str, List[str], dict, dict]:
     """
     GPU-decorated function for motion generation.
     This function will request GPU allocation on Hugging Face Zero GPU.
+
+    Args:
+        expression_override: Optional dict with 'expression' and 'intensity' to skip inference
 
     Returns:
         Tuple of (html_content, fbx_files, expression_data, motion_state)
@@ -141,6 +145,7 @@ def generate_motion_on_gpu(
         output_format=output_format,
         original_text=original_text,
         output_dir=output_dir,
+        expression_override=expression_override,
     )
     return html_content, fbx_files, expression_data, motion_state
 
@@ -481,7 +486,7 @@ class T2MGradioUI:
         self, text: str, duration: float, enable_rewrite: bool = True, enable_duration_est: bool = True
     ):
         if not text.strip():
-            return "", gr.update(interactive=False), gr.update()
+            return "", gr.update(interactive=False), gr.update(), ""
 
         call_llm = enable_rewrite or enable_duration_est
         if not call_llm:
@@ -498,13 +503,25 @@ class T2MGradioUI:
                     f"❌ Text rewriting/duration prediction failed: {str(e)}",
                     gr.update(interactive=False),
                     gr.update(),
+                    "",
                 )
             if not enable_rewrite:
                 rewritten_text = text
             if not enable_duration_est:
                 predicted_duration = duration
 
-        return rewritten_text, gr.update(interactive=True), gr.update(value=predicted_duration)
+        # Infer expression from text (use rewritten text for better accuracy)
+        expression_text = ""
+        try:
+            expression_data = self.runtime.infer_expression(rewritten_text)
+            expr = expression_data.get("expression", "neutral")
+            intensity = expression_data.get("intensity", 0.0)
+            expression_text = f"{expr} (intensity: {intensity:.1f})"
+            print(f"\t>>> Inferred expression during rewrite: {expression_text}")
+        except Exception as e:
+            print(f"\t>>> Expression inference failed: {e}")
+
+        return rewritten_text, gr.update(interactive=True), gr.update(value=predicted_duration), expression_text
 
     def _generate_motion(
         self,
@@ -513,9 +530,15 @@ class T2MGradioUI:
         seed_input: str,
         duration: float,
         cfg_scale: float,
+        expression_override: str,
+        current_expression: str,
     ) -> Tuple[str, List[str], str, dict]:
         """
         Generate motion and return HTML, FBX files, expression info, and motion state.
+
+        Args:
+            expression_override: Manual expression override from dropdown ("自動 (Auto)" or expression name)
+            current_expression: Currently displayed expression from rewrite stage
 
         Returns:
             Tuple of (iframe_html, fbx_files, expression_text, motion_state)
@@ -529,6 +552,20 @@ class T2MGradioUI:
             text_to_use = rewritten_text.strip()
             if not text_to_use:
                 return "Error: Rewritten text is empty, please rewrite the text first", [], "", None
+
+        # Determine expression to use
+        # Priority: manual override > rewrite inference > motion generation inference
+        expression_to_use = None
+        if expression_override and expression_override != "自動 (Auto)":
+            # Manual override selected
+            expression_to_use = {"expression": expression_override, "intensity": 0.8}
+        elif current_expression:
+            # Use expression from rewrite stage
+            # Parse "happy (intensity: 0.7)" format
+            import re
+            match = re.match(r"(\w+)\s*\(intensity:\s*([\d.]+)\)", current_expression)
+            if match:
+                expression_to_use = {"expression": match.group(1), "intensity": float(match.group(2))}
 
         try:
             # Use runtime from global if available (for Zero GPU), otherwise use self.runtime
@@ -545,6 +582,7 @@ class T2MGradioUI:
                 output_format=req_format,
                 original_text=original_text,
                 output_dir=self.args.output_dir,
+                expression_override=expression_to_use,
             )
             # Escape HTML content for srcdoc attribute
             escaped_html = html_content.replace('"', "&quot;")
@@ -851,7 +889,7 @@ class T2MGradioUI:
                     self.enable_rewrite,
                     self.enable_duration_est,
                 ],
-                outputs=[self.rewritten_text, self.generate_btn, self.duration_slider],
+                outputs=[self.rewritten_text, self.generate_btn, self.duration_slider, self.expression_display],
             ).then(
                 fn=lambda: (
                     gr.update(visible=True),
@@ -862,8 +900,8 @@ class T2MGradioUI:
 
         # Generate motion logic
         self.generate_btn.click(
-            fn=lambda: ("Generating motion, please wait... (It takes some extra time to start the renderer for the first generation)", "自動 (Auto)"),
-            outputs=[self.status_output, self.expression_override],
+            fn=lambda: "Generating motion, please wait... (It takes some extra time to start the renderer for the first generation)",
+            outputs=[self.status_output],
         ).then(
             self._generate_motion,
             inputs=[
@@ -872,6 +910,8 @@ class T2MGradioUI:
                 self.seed_input,
                 self.duration_slider,
                 self.cfg_slider,
+                self.expression_override,
+                self.expression_display,
             ],
             outputs=[self.output_display, self.fbx_files, self.expression_display, self.motion_state],
             concurrency_limit=NUM_WORKERS,
